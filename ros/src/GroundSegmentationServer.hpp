@@ -21,10 +21,12 @@ class GroundSegmentationServer : public rclcpp::Node {
 
   /// Stream the point clouds for visualization
   void PublishClouds(const Eigen::MatrixX3f &est_ground,
-                                             const Eigen::MatrixX3f &est_nonground,
-                                             const std_msgs::msg::Header header_msg);
- private:
+                     const std::vector<float> &ground_intensities,
+                     const Eigen::MatrixX3f &est_nonground,
+                     const std::vector<float> &nonground_intensities,
+                     const std_msgs::msg::Header &header_msg);
 
+ private:
   /// Data subscribers.
   rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr pointcloud_sub_;
 

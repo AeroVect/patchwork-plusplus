@@ -42,7 +42,8 @@ ament_target_dependencies(
   nav_msgs
   sensor_msgs
   geometry_msgs
-  tf2_ros)
+  tf2_ros
+)
 
 rclcpp_components_register_node(gseg_component PLUGIN "patchworkpp_ros::GroundSegmentationServer" EXECUTABLE patchworkpp_node)
 
