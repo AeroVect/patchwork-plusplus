@@ -25,7 +25,7 @@ def generate_launch_description():
     use_sim_time = LaunchConfiguration("use_sim_time", default="false")
 
     # tf tree configuration, these are the likely 3 parameters to change and nothing else
-    base_frame = LaunchConfiguration("base_frame", default="hesai_center_lidar")
+    base_frame = LaunchConfiguration("base_frame", default="base_link")
 
     # ROS configuration
     pointcloud_topic = LaunchConfiguration("cloud_topic")
@@ -71,13 +71,13 @@ def generate_launch_description():
         extra_arguments=[{'use_intra_process_comms': LaunchConfiguration('use_intra_process_comms', default='false')}]
     )
 
-    load_composable_nodes = LoadComposableNodes(
+    patchwork_composable_node = LoadComposableNodes(
         target_container=container.name,
         composable_node_descriptions=[patchworkpp_composable_node],
     )
             
     return LaunchDescription(
         [
-            load_composable_nodes
+            patchwork_composable_node
         ]
     )

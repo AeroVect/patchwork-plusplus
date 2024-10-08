@@ -25,8 +25,7 @@ GroundSegmentationServer::GroundSegmentationServer(const rclcpp::NodeOptions &op
   : rclcpp::Node("patchworkpp_node", options) {
 
   patchwork::Params params;
-  base_frame_ = declare_parameter<std::string>("base_frame", base_frame_);
-
+  base_frame_ = declare_parameter<std::string>("base_frame", "base_link");
   params.sensor_height = declare_parameter<double>("sensor_height", params.sensor_height);
   params.num_iter      = declare_parameter<int>("num_iter", params.num_iter);
   params.num_lpr       = declare_parameter<int>("num_lpr", params.num_lpr);
@@ -122,13 +121,10 @@ void GroundSegmentationServer::PublishClouds(const Eigen::MatrixX3f &est_ground,
                                              const std_msgs::msg::Header &header_msg) {
 
   std_msgs::msg::Header header = header_msg;
-  header.frame_id = "hesai_center_lidar";
+  header.frame_id = base_frame_;
 
-  auto ground_msg = patchworkpp_ros::utils::EigenMatToPointCloud2(est_ground, ground_intensities, header);
-  auto nonground_msg = patchworkpp_ros::utils::EigenMatToPointCloud2(est_nonground, nonground_intensities, header);
-
-  ground_publisher_->publish(std::move(ground_msg));
-  nonground_publisher_->publish(std::move(nonground_msg));
+  ground_publisher_->publish(std::move(patchworkpp_ros::utils::EigenMatToPointCloud2(est_ground, ground_intensities, header)));
+  nonground_publisher_->publish(std::move(patchworkpp_ros::utils::EigenMatToPointCloud2(est_nonground, nonground_intensities, header)));
 }
 
 }  // namespace patchworkpp_ros
