@@ -25,8 +25,7 @@ GroundSegmentationServer::GroundSegmentationServer(const rclcpp::NodeOptions &op
   : rclcpp::Node("patchworkpp_node", options) {
 
   patchwork::Params params;
-  base_frame_ = declare_parameter<std::string>("base_frame", base_frame_);
-
+  base_frame_ = declare_parameter<std::string>("base_frame", "base_link");
   params.sensor_height = declare_parameter<double>("sensor_height", params.sensor_height);
   params.num_iter      = declare_parameter<int>("num_iter", params.num_iter);
   params.num_lpr       = declare_parameter<int>("num_lpr", params.num_lpr);
@@ -62,37 +61,72 @@ GroundSegmentationServer::GroundSegmentationServer(const rclcpp::NodeOptions &op
 //  rclcpp::QoS qos((rclcpp::SystemDefaultsQoS().keep_last(1).durability_volatile()));
   rclcpp::QoS qos(rclcpp::QoSInitialization::from_rmw(rmw_qos_profile_default));
   qos.reliability(RMW_QOS_POLICY_RELIABILITY_RELIABLE);
-  qos.durability(RMW_QOS_POLICY_DURABILITY_TRANSIENT_LOCAL);
+  qos.durability(RMW_QOS_POLICY_DURABILITY_VOLATILE);
 
   cloud_publisher_     = create_publisher<sensor_msgs::msg::PointCloud2>("/patchworkpp/cloud", qos);
   ground_publisher_    = create_publisher<sensor_msgs::msg::PointCloud2>("/patchworkpp/ground", qos);
   nonground_publisher_ = create_publisher<sensor_msgs::msg::PointCloud2>("/patchworkpp/nonground", qos);
-
+    
   RCLCPP_INFO(this->get_logger(), "Patchwork++ ROS 2 node initialized");
 }
 
 void GroundSegmentationServer::EstimateGround(const sensor_msgs::msg::PointCloud2::ConstSharedPtr &msg) {
-  const auto &cloud = patchworkpp_ros::utils::PointCloud2ToEigenMat(msg);
+  // Extract points and intensities from the incoming PointCloud2 message
+  std::vector<Eigen::Vector3d> points;
+  std::vector<float> intensities;
+  PointCloud2ToEigen(msg, points, intensities);
 
-  // Estimate ground
+  // Convert points to Eigen::MatrixX3f for processing
+  Eigen::MatrixX3f cloud(points.size(), 3);
+  for (size_t i = 0; i < points.size(); ++i) {
+    cloud.row(i) = points[i].cast<float>();
+  }
+
+  // Estimate ground using Patchwork++
   Patchworkpp_->estimateGround(cloud);
-  cloud_publisher_->publish(patchworkpp_ros::utils::EigenMatToPointCloud2(cloud, msg->header));
-  // Get ground and nonground
-  Eigen::MatrixX3f ground     = Patchworkpp_->getGround();
-  Eigen::MatrixX3f nonground  = Patchworkpp_->getNonground();
-  double           time_taken = Patchworkpp_->getTimeTaken();
-  PublishClouds(ground, nonground, msg->header);
+
+  // Get indices of ground and nonground points
+  Eigen::VectorXi ground_indices = Patchworkpp_->getGroundIndices();
+  Eigen::VectorXi nonground_indices = Patchworkpp_->getNongroundIndices();
+
+
+  // Extract ground points and intensities
+  Eigen::MatrixX3f ground_points(ground_indices.size(), 3);
+  std::vector<float> ground_intensities(ground_indices.size());
+
+  for (int i = 0; i < ground_indices.size(); ++i) {
+      int idx = ground_indices(i); 
+      ground_points.row(i) = cloud.row(idx);
+      ground_intensities[i] = intensities[idx];
+  }
+
+  // Extract nonground points and intensities
+  Eigen::MatrixX3f nonground_points(nonground_indices.size(), 3);
+  std::vector<float> nonground_intensities(nonground_indices.size());
+
+  for (int i = 0; i < nonground_indices.size(); ++i) {
+      int idx = nonground_indices(i); 
+      nonground_points.row(i) = cloud.row(idx);
+      nonground_intensities[i] = intensities[idx];
+  }
+
+  // Publish the clouds with intensity values
+  PublishClouds(ground_points, ground_intensities, nonground_points, nonground_intensities, msg->header);
 }
 
 void GroundSegmentationServer::PublishClouds(const Eigen::MatrixX3f &est_ground,
+                                             const std::vector<float> &ground_intensities,
                                              const Eigen::MatrixX3f &est_nonground,
-                                             const std_msgs::msg::Header header_msg) {
+                                             const std::vector<float> &nonground_intensities,
+                                             const std_msgs::msg::Header &header_msg) {
 
   std_msgs::msg::Header header = header_msg;
   header.frame_id = base_frame_;
-  ground_publisher_->publish(std::move(patchworkpp_ros::utils::EigenMatToPointCloud2(est_ground, header)));
-  nonground_publisher_->publish(std::move(patchworkpp_ros::utils::EigenMatToPointCloud2(est_nonground, header)));
+
+  ground_publisher_->publish(std::move(patchworkpp_ros::utils::EigenMatToPointCloud2(est_ground, ground_intensities, header)));
+  nonground_publisher_->publish(std::move(patchworkpp_ros::utils::EigenMatToPointCloud2(est_nonground, nonground_intensities, header)));
 }
+
 }  // namespace patchworkpp_ros
 
 #include "rclcpp_components/register_node_macro.hpp"
