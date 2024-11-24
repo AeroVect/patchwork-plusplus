@@ -48,6 +48,6 @@ ament_target_dependencies(
 rclcpp_components_register_node(gseg_component PLUGIN "patchworkpp_ros::GroundSegmentationServer" EXECUTABLE patchworkpp_node)
 
 install(TARGETS gseg_component LIBRARY DESTINATION lib RUNTIME DESTINATION lib/${PROJECT_NAME})
-install(DIRECTORY launch rviz DESTINATION share/${PROJECT_NAME}/)
+install(DIRECTORY launch rviz config DESTINATION share/${PROJECT_NAME}/)
 
 ament_package()
