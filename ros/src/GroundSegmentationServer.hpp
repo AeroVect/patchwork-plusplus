@@ -5,6 +5,7 @@
 #include <rclcpp/rclcpp.hpp>
 #include <sensor_msgs/msg/point_cloud2.hpp>
 #include <std_msgs/msg/header.hpp>
+#include <std_msgs/msg/float32.hpp>
 #include <string>
 
 namespace patchworkpp_ros {
@@ -34,6 +35,10 @@ class GroundSegmentationServer : public rclcpp::Node {
   rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr cloud_publisher_;
   rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr ground_publisher_;
   rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr nonground_publisher_;
+
+  // Timing publisher
+  rclcpp::Publisher<std_msgs::msg::Float32>::SharedPtr processing_time_publisher_;
+  
 
   /// Patchwork++
   std::unique_ptr<patchwork::PatchWorkpp> Patchworkpp_;
