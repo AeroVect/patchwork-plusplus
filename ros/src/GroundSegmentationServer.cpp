@@ -2,6 +2,7 @@
 #include <memory>
 #include <utility>
 #include <vector>
+#include <chrono>
 
 // Patchwork++-ROS
 #include "GroundSegmentationServer.hpp"
@@ -63,9 +64,11 @@ GroundSegmentationServer::GroundSegmentationServer(const rclcpp::NodeOptions &op
   qos.reliability(RMW_QOS_POLICY_RELIABILITY_RELIABLE);
   qos.durability(RMW_QOS_POLICY_DURABILITY_VOLATILE);
 
-  cloud_publisher_     = create_publisher<sensor_msgs::msg::PointCloud2>("/patchworkpp/cloud", qos);
-  ground_publisher_    = create_publisher<sensor_msgs::msg::PointCloud2>("/patchworkpp/ground", qos);
-  nonground_publisher_ = create_publisher<sensor_msgs::msg::PointCloud2>("/patchworkpp/nonground", qos);
+  cloud_publisher_     = create_publisher<sensor_msgs::msg::PointCloud2>("/patchworkpp/cloud", 1);
+  ground_publisher_    = create_publisher<sensor_msgs::msg::PointCloud2>("/patchworkpp/ground", 1);
+  nonground_publisher_ = create_publisher<sensor_msgs::msg::PointCloud2>("/patchworkpp/nonground", 1);
+
+  processing_time_publisher_ = create_publisher<std_msgs::msg::Float32>("/patchworkpp/processing_time", 1);
     
   RCLCPP_INFO(this->get_logger(), "Patchwork++ ROS 2 node initialized");
 }
@@ -74,6 +77,10 @@ void GroundSegmentationServer::EstimateGround(const sensor_msgs::msg::PointCloud
   // Extract points and intensities from the incoming PointCloud2 message
   std::vector<Eigen::Vector3d> points;
   std::vector<float> intensities;
+
+  // start timer
+  auto start = std::chrono::high_resolution_clock::now();
+
   PointCloud2ToEigen(msg, points, intensities);
 
   // Convert points to Eigen::MatrixX3f for processing
@@ -110,6 +117,16 @@ void GroundSegmentationServer::EstimateGround(const sensor_msgs::msg::PointCloud
       nonground_intensities[i] = intensities[idx];
   }
 
+  // end timer
+  auto end = std::chrono::high_resolution_clock::now();
+
+  // Calculate the elapsed time and convert to milliseconds
+  std::chrono::duration<double, std::milli> elapsed_seconds = end - start;
+
+  // Publish the processing time
+  std_msgs::msg::Float32 processing_time;
+  processing_time.data = elapsed_seconds.count();
+  processing_time_publisher_->publish(processing_time);
   // Publish the clouds with intensity values
   PublishClouds(ground_points, ground_intensities, nonground_points, nonground_intensities, msg->header);
 }
