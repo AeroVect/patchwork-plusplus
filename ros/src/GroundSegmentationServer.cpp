@@ -49,6 +49,11 @@ GroundSegmentationServer::GroundSegmentationServer(const rclcpp::NodeOptions &op
   // Construct the main Patchwork++ node
   Patchworkpp_ = std::make_unique<patchwork::PatchWorkpp>(params);
 
+  // Parameters for base link proximity filtering
+  sensor_height_              = params.sensor_height;
+  base_link_proximity_radius_ = declare_parameter<double>("base_link_proximity_radius", 10.0);
+  max_ground_height_          = declare_parameter<double>("max_ground_height", 1.0);
+
   // Initialize subscribers
   pointcloud_sub_ = create_subscription<sensor_msgs::msg::PointCloud2>(
     "pointcloud_topic", rclcpp::SensorDataQoS(),
@@ -127,21 +132,80 @@ void GroundSegmentationServer::EstimateGround(const sensor_msgs::msg::PointCloud
   std_msgs::msg::Float32 processing_time;
   processing_time.data = elapsed_seconds.count();
   processing_time_publisher_->publish(processing_time);
+  // Reclassify the ground and nonground points
+  std::pair<sensor_msgs::msg::PointCloud2::SharedPtr, sensor_msgs::msg::PointCloud2::SharedPtr> reclassified_clouds = ReclassifyGroundPoints(ground_points, ground_intensities, nonground_points, nonground_intensities, msg->header);
   // Publish the clouds with intensity values
-  PublishClouds(ground_points, ground_intensities, nonground_points, nonground_intensities, msg->header);
+  PublishClouds(reclassified_clouds.first, reclassified_clouds.second);
 }
 
-void GroundSegmentationServer::PublishClouds(const Eigen::MatrixX3f &est_ground,
-                                             const std::vector<float> &ground_intensities,
-                                             const Eigen::MatrixX3f &est_nonground,
-                                             const std::vector<float> &nonground_intensities,
-                                             const std_msgs::msg::Header &header_msg) {
-
+std::pair<sensor_msgs::msg::PointCloud2::SharedPtr, sensor_msgs::msg::PointCloud2::SharedPtr>
+GroundSegmentationServer::ReclassifyGroundPoints(const Eigen::MatrixX3f &est_ground,
+                                                 const std::vector<float> &ground_intensities,
+                                                 const Eigen::MatrixX3f &est_nonground,
+                                                 const std::vector<float> &nonground_intensities,
+                                                 const std_msgs::msg::Header &header_msg) 
+{
   std_msgs::msg::Header header = header_msg;
   header.frame_id = base_frame_;
 
-  ground_publisher_->publish(std::move(patchworkpp_ros::utils::EigenMatToPointCloud2(est_ground, ground_intensities, header)));
-  nonground_publisher_->publish(std::move(patchworkpp_ros::utils::EigenMatToPointCloud2(est_nonground, nonground_intensities, header)));
+  // Convert Eigen matrices to PointCloud2 and then to PCL clouds
+  std::shared_ptr<pcl::PointCloud<pcl::PointXYZI>> ground_pcl = std::make_shared<pcl::PointCloud<pcl::PointXYZI>>();
+  patchworkpp_ros::utils::EigenMatToPCL(est_ground, ground_intensities, *ground_pcl);
+
+  std::shared_ptr<pcl::PointCloud<pcl::PointXYZI>> nonground_pcl = std::make_shared<pcl::PointCloud<pcl::PointXYZI>>();
+  patchworkpp_ros::utils::EigenMatToPCL(est_nonground, nonground_intensities, *nonground_pcl);
+
+  auto reclassified_ground_pcl = std::make_shared<pcl::PointCloud<pcl::PointXYZI>>();
+  auto reclassified_nonground_pcl = std::make_shared<pcl::PointCloud<pcl::PointXYZI>>();
+
+  // Copy all nonground points to reclassified non-ground point cloud
+  *reclassified_nonground_pcl = *nonground_pcl;
+
+  // Use CropBox for filtering ground points based on proximity to the base link
+  pcl::CropBox<pcl::PointXYZI> base_link_proximity_filter;
+  base_link_proximity_filter.setMin(Eigen::Vector4f(-base_link_proximity_radius_, -base_link_proximity_radius_, -std::numeric_limits<float>::max(), 1.0));
+  base_link_proximity_filter.setMax(Eigen::Vector4f(base_link_proximity_radius_, base_link_proximity_radius_, std::numeric_limits<float>::max(), 1.0));
+  base_link_proximity_filter.setInputCloud(ground_pcl);
+
+  // Points outside the region
+  base_link_proximity_filter.setNegative(true);
+  auto outside_region_pointcloud = std::make_shared<pcl::PointCloud<pcl::PointXYZI>>();
+  base_link_proximity_filter.filter(*outside_region_pointcloud);
+  *reclassified_ground_pcl += *outside_region_pointcloud;
+
+  // Points inside the region
+  base_link_proximity_filter.setNegative(false);
+  auto inside_region_pointcloud = std::make_shared<pcl::PointCloud<pcl::PointXYZI>>();
+  base_link_proximity_filter.filter(*inside_region_pointcloud);
+
+  for (const auto &point : inside_region_pointcloud->points) 
+  {
+    if (point.z + sensor_height_ <= max_ground_height_) 
+    {
+      reclassified_ground_pcl->push_back(point);
+    } 
+    else 
+    {
+      reclassified_nonground_pcl->push_back(point);
+    }
+  }
+
+  // Convert reclassified PCL clouds to ROS PointCloud2 messages
+  auto reclassified_ground_msg = std::make_shared<sensor_msgs::msg::PointCloud2>();
+  pcl::toROSMsg(*reclassified_ground_pcl, *reclassified_ground_msg);
+  reclassified_ground_msg->header = header;
+
+  auto reclassified_nonground_msg = std::make_shared<sensor_msgs::msg::PointCloud2>();
+  pcl::toROSMsg(*reclassified_nonground_pcl, *reclassified_nonground_msg);
+  reclassified_nonground_msg->header = header;
+
+  return {reclassified_ground_msg, reclassified_nonground_msg};
+}
+
+void GroundSegmentationServer::PublishClouds(sensor_msgs::msg::PointCloud2::SharedPtr ground_msg, sensor_msgs::msg::PointCloud2::SharedPtr nonground_msg) {
+
+  ground_publisher_->publish(*ground_msg);
+  nonground_publisher_->publish(*nonground_msg);
 }
 
 }  // namespace patchworkpp_ros
