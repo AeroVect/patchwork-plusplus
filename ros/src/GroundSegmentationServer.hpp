@@ -7,6 +7,7 @@
 #include <pcl/pcl_base.h>
 #include <pcl/point_types.h>
 #include <pcl_conversions/pcl_conversions.h>
+#include <pcl/filters/extract_indices.h>
 
 // ROS 2
 #include <rclcpp/rclcpp.hpp>
