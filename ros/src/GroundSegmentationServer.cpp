@@ -162,7 +162,7 @@ GroundSegmentationServer::ReclassifyGroundPoints(const Eigen::MatrixX3f &est_gro
   *reclassified_nonground_pcl = *nonground_pcl;
 
   // Use CropBox for filtering ground points based on proximity to the base link
-  pcl::CropBox<pcl::PointXYZI> base_link_proximity_filter;
+  pcl::CropBox<pcl::PointXYZI> base_link_proximity_filter(true);
   base_link_proximity_filter.setMin(Eigen::Vector4f(-base_link_proximity_radius_, -base_link_proximity_radius_, max_ground_height_ - sensor_height_, 1.0)); 
   base_link_proximity_filter.setMax(Eigen::Vector4f(base_link_proximity_radius_, base_link_proximity_radius_, std::numeric_limits<float>::max(), 1.0));
   base_link_proximity_filter.setInputCloud(ground_pcl);
@@ -173,19 +173,15 @@ GroundSegmentationServer::ReclassifyGroundPoints(const Eigen::MatrixX3f &est_gro
   auto inside_region_pointcloud = std::make_shared<pcl::PointCloud<pcl::PointXYZI>>();
   base_link_proximity_filter.filter(*inside_region_pointcloud);
 
-  // Get the indices of the points inside the cropbox
-  auto inside_region_indices = base_link_proximity_filter.getIndices();
-
   // Update reclassified_nonground_pcl by adding inside_region points
   *reclassified_nonground_pcl += *inside_region_pointcloud;
-  // Extract the points outside the cropbox that need to be
-  // kept as ground
-  base_link_proximity_filter.setNegative(true); // Remove points in the cropbox
-  auto outside_region_pointcloud = std::make_shared<pcl::PointCloud<pcl::PointXYZI>>();
-  base_link_proximity_filter.filter(*outside_region_pointcloud);
-
-  // Update reclassified_ground_pcl by adding outside_region points
-  *reclassified_ground_pcl += *outside_region_pointcloud;
+  
+  // Remove inside_region points from ground_pcl to form reclassified_ground_pcl
+  pcl::ExtractIndices<pcl::PointXYZI> extract;
+  extract.setInputCloud(ground_pcl);
+  extract.setIndices(base_link_proximity_filter.getRemovedIndices());
+  extract.setNegative(false); // Retain points not in the cropbox
+  extract.filter(*reclassified_ground_pcl);
 
   // Convert reclassified PCL clouds to ROS PointCloud2 messages
   auto reclassified_ground_msg = std::make_shared<sensor_msgs::msg::PointCloud2>();
