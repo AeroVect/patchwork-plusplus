@@ -207,18 +207,4 @@ inline std::unique_ptr<PointCloud2> EigenMatToPointCloud2(const Eigen::MatrixX3f
   return msg;
 }
 
-inline void EigenMatToPCL(const Eigen::MatrixX3f &matrix, 
-                          const std::vector<float> &intensities, 
-                          pcl::PointCloud<pcl::PointXYZI> &cloud) {
-  cloud.clear();
-  for (int i = 0; i < matrix.rows(); ++i) {
-    pcl::PointXYZI point;
-    point.x = matrix(i, 0);
-    point.y = matrix(i, 1);
-    point.z = matrix(i, 2);
-    point.intensity = intensities[i];
-    cloud.push_back(point);
-  }
-}
-
 }  // namespace patchworkpp_ros::utils
